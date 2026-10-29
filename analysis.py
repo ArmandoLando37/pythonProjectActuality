@@ -1,110 +1,131 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import datetime
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.dates as mdates
+# -*- coding: utf-8 -*-
+"""Analyse des articles — données pures pour les widgets du design system
+(disign/DISIGN_RULES.md §9 : SegmentedControl + RingProgress + BarChart +
+CardDark). Les graphiques sont rendus nativement (QPainter), pas matplotlib.
+"""
+
+from collections import Counter
+from datetime import date, datetime, timedelta
+
+
+DATE_FORMATS = ("%d/%m/%Y à %H:%M", "%Y-%m-%dT%H:%M:%SZ")
+
 
 class DataAnalyzer:
+
     def __init__(self):
-        plt.style.use('seaborn-v0_8')
-        
-    def create_dataframe(self, articles):
-        """Convertit la liste d'articles en DataFrame pandas"""
-        print("📋 Création du DataFrame...")
-        
-        df = pd.DataFrame(articles)
-        print(f"DataFrame initial: {len(df)} articles, {len(df.columns)} colonnes")
-        
-        # Convertir la date en format datetime pour l'analyse
-        if not df.empty and 'published_at' in df.columns:
-            print(f"Colonne published_at trouvée: {df['published_at'].iloc[0]}")
-            
+        pass
+
+    # ------------------------------------------------------------------ helpers
+
+    @staticmethod
+    def _parse_date(value):
+        if not value:
+            return None
+        for fmt in DATE_FORMATS:
             try:
-                # Essayer le format français
-                df['date'] = pd.to_datetime(
-                    df['published_at'], 
-                    format='%d/%m/%Y à %H:%M', 
-                    errors='coerce'
-                )
-                
-                # Vérifier combien de dates ont été converties
-                successful_conversions = df['date'].notna().sum()
-                print(f"Dates converties avec format français: {successful_conversions}/{len(df)}")
-                
-                if successful_conversions == 0:
-                    # Fallback: format ISO
-                    print("🔄 Tentative avec format ISO...")
-                    df['date'] = pd.to_datetime(df['published_at'], errors='coerce')
-                    
-            except Exception as e:
-                print(f"❌ Erreur conversion date: {e}")
-                df['date'] = pd.to_datetime(df['published_at'], errors='coerce')
-                    
-        return df
-        
-    def articles_by_source(self, articles):
-        """Génère un graphique des articles par source"""
-        df = self.create_dataframe(articles)
-        
-        if df.empty or 'source' not in df.columns:
-            return None
-            
-        # Compter les articles par source
-        source_counts = df['source'].value_counts().head(10)  # Top 10 sources
-        
-        # Créer le graphique
-        fig, ax = plt.subplots(figsize=(10, 6))
-        bars = ax.barh(source_counts.index, source_counts.values, color='#8e2dc5')
-        
-        # Ajouter les valeurs sur les barres
-        for i, v in enumerate(source_counts.values):
-            ax.text(v + 0.1, i, str(v), va='center')
-            
-        # Personnaliser le graphique
-        ax.set_xlabel('Nombre d\'articles')
-        ax.set_title('Articles par source')
-        ax.invert_yaxis()  # Afficher la source avec le plus d'articles en haut
-        plt.tight_layout()
-        
-        return fig
-        
-    def articles_by_date(self, articles):
-        """Génère un graphique des articles par date"""
-        df = self.create_dataframe(articles)
-        
-        if df.empty or 'date' not in df.columns or df['date'].isna().all():
-            return None
-            
-        # Grouper par date
-        df['date_only'] = df['date'].dt.date
-        date_counts = df.groupby('date_only').size()
-        
-        # Créer le graphique
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(date_counts.index, date_counts.values, marker='o', linestyle='-', color='#8e2dc5')
-        
-        # Formater les dates sur l'axe x
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
-        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
-        
-        # Personnaliser le graphique
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Nombre d\'articles')
-        ax.set_title('Articles par date')
-        ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        
-        return fig
-        
+                return datetime.strptime(value, fmt).date()
+            except (ValueError, TypeError):
+                continue
+        return None
+
+    @staticmethod
+    def _clean_articles(articles):
+        prepared = []
+        for article in articles:
+            d = DataAnalyzer._parse_date(article.get("published_at", ""))
+            prepared.append({
+                "source": article.get("source", "Source inconnue"),
+                "date": d,
+            })
+        return prepared
+
+    # ------------------------------------------------------------------ agrégats
+
+    def by_day(self, articles, period="day", today=None):
+        """Comptage par jour / semaine / mois pour la fenêtre du contrôle
+        segmenté (§9). Retourne [(label, count)]."""
+        today = today or date.today()
+        prepared = self._clean_articles(articles)
+
+        if period == "week":
+            prepared = self._clean_articles(articles)
+            buckets = []
+            monday = today - timedelta(days=today.weekday())
+            for i in range(3, -1, -1):
+                week_start = monday - timedelta(weeks=i)
+                week_end = week_start + timedelta(days=7)
+                week_number = week_start.isocalendar()[1]
+                buckets.append((f"S{week_number:02d}", [
+                    item for item in prepared
+                    if item["date"] and week_start <= item["date"] < week_end
+                ]))
+            return [(label, len(group)) for label, group in buckets]
+
+        if period == "month":
+            buckets = []
+            months = []
+            for i in range(5, -1, -1):
+                month = (today.month - i) % 12 or 12
+                year = today.year - (1 if today.month - i < 1 else 0)
+                months.append((year, month))
+                buckets.append(0)
+            month_names = ["janv", "févr", "mars", "avr", "mai",
+                           "juin", "juil", "août", "sept", "oct",
+                           "nov", "déc"]
+            for idx, (year, month) in enumerate(months):
+                for item in prepared:
+                    d = item["date"]
+                    if d and d.year == year and d.month == month:
+                        buckets[idx] += 1
+            labels = [month_names[m - 1] for (_y, m) in months]
+            return list(zip(labels, buckets))
+
+        # period == "day" : 7 derniers jours
+        counts = {}
+        labels = []
+        day_names = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"]
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
+            labels.append(f"{day_names[day.weekday()]} {day.day:02d}")
+            counts[day] = 0
+        for item in prepared:
+            d = item["date"]
+            if d and d in counts:
+                counts[d] += 1
+        return list(zip(labels, counts.values()))
+
+    def by_source(self, articles, top=10):
+        """Top N sources [(source, count)]."""
+        counter = Counter(a.get("source", "Source inconnue")
+                          for a in articles)
+        return counter.most_common(top)
+
+    def stats(self, articles):
+        aggregate = self._clean_articles(articles)
+        sources = Counter(a["source"] for a in aggregate)
+        dates = [a["date"] for a in aggregate if a["date"]]
+        return {
+            "total": len(articles),
+            "sources": len(sources),
+            "dominant": sources.most_common(1)[0][0] if sources else "—",
+            "dominant_count": sources.most_common(1)[0][1] if sources else 0,
+            "last": max(dates) if dates else None,
+        }
+
+    # ------------------------------------------------------------------ export CSV
+
     def export_to_csv(self, articles, filename="news_analysis.csv"):
-        """Exporte les données d'articles vers un fichier CSV"""
-        df = self.create_dataframe(articles)
-        
-        if not df.empty:
-            # Sélectionner les colonnes pertinentes
-            export_df = df[['title', 'source', 'published_at', 'author']].copy()
-            export_df.to_csv(filename, index=False, encoding='utf-8')
-            return True
-            
-        return False
+        """Exporte les données d'articles vers un fichier CSV."""
+        import pandas as pd
+
+        if not articles:
+            return False
+        rows = [{
+            "title": a.get("title", ""),
+            "source": a.get("source", ""),
+            "published_at": a.get("published_at", ""),
+            "author": a.get("author", ""),
+        } for a in articles]
+        pd.DataFrame(rows).to_csv(filename, index=False, encoding="utf-8")
+        return True
