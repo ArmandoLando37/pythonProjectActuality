@@ -1,173 +1,363 @@
-/* Styles généraux */
+﻿/* ==========================================================
+   Lecteur d'actualites — QSS design system (disign/DISIGN_RULES.md)
+   Ce fichier est un TEMPLATE : les tokens sont remplaces au chargement
+   par core/theme_manager.py (string.Template, placeholders underscore).
+   Ne JAMAIS mettre de valeurs en dur dans les ecrans.
+   ========================================================== */
+
+/* 8.6 — police applicative ; pas de font-size global (les QFont par
+   rôle le gèrent, le QSS ne fixe que la famille) */
 QWidget {
-    font-family: 'Segoe UI', Arial, sans-serif;
-}
-#logoStyle{
-    border-radius: 50%;
-    width: 50%;
-    height: 1.11rem;
-}
-/* Navbar */
-#navbar {
-    background-color: #0b51d4;
-    border-bottom: 1px solid #07137a;
+    font-family: ${font_family};
+    color: ${text_primary};
 }
 
-#navbar_title {
-    color: white;
-    font-size: 18px;
-    font-weight: bold;
-    padding: 5px;
+/* ---------------- Conteneurs racine ---------------- */
+
+/* Fond derriere la fenetre : degrade bg.app (paragraph 2.1) */
+#AppBackground {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 ${bg_gradient_top}, stop:1 ${bg_gradient_bottom});
 }
+
+/* Grand panneau principal — radius 32 (paragraph 3) */
+#MainPanel {
+    background: ${bg_surface};
+    border-radius: 32px;
+}
+
+/* ---------------- Sidebar (paragraph 4.1) ---------------- */
+
+#Sidebar {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 ${bg_sidebar_top}, stop:1 ${bg_sidebar_bottom});
+    border-radius: 28px;
+}
+
+#SidebarTitle {
+    color: ${text_on_dark};
+    font-weight: 600;
+}
+
+#SidebarSubtitle {
+    color: ${text_on_dark_muted};
+    font-size: 11px;
+}
+
+/* CTA bas de sidebar (paragraph 4.1) */
+#SidebarCta {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+}
+#SidebarCtaTitle {
+    color: ${text_on_dark};
+    font-size: 15px;
+    font-weight: 600;
+}
+#SidebarCtaText {
+    color: ${text_on_dark_muted};
+    font-size: 11px;
+}
+QPushButton#SidebarCtaButton {
+    background: #FFFFFF;
+    color: #111111;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 16px;
+    min-height: 32px;
+    padding: 0 10px;
+}
+QPushButton#SidebarCtaButton:hover {
+    background: #F2F2F2;
+}
+QPushButton#SidebarCtaButton:pressed {
+    background: #E6E6E6;
+}
+
+/* Bouton perso dessine par SidebarButton (paintEvent) */
+
+/* ---------------- Cartes (paragraph 4.3) ---------------- */
+
+QFrame#Card {
+    background: ${bg_card};
+    border-radius: 24px;
+    border: 1px solid ${border_subtle};
+}
+
+QFrame#CardRaised {
+    background: ${bg_card_raised};
+    border-radius: 24px;
+    border: 1px solid ${border_subtle};
+}
+
+QFrame#CardInset {
+    background: ${bg_card_inset};
+    border-radius: 24px;
+    border: none;
+}
+
+QFrame#CardDark {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 ${bg_card_dark_top}, stop:1 ${bg_card_dark_bottom});
+    border-radius: 24px;
+    border: none;
+}
+
+QFrame#CardAccent {
+    background: ${accent};
+    border-radius: 24px;
+    border: none;
+}
+
+#CompletionCard {
+    background: ${bg_card_raised};
+    border-radius: 24px;
+    border: none;
+}
+
+#DetailCard {
+    background: ${bg_card_raised};
+    border-radius: 28px;
+    border: 1px solid ${border_subtle};
+}
+
+/* ---------------- Boutons (paragraph 4.4) ---------------- */
+
+QPushButton#Primary {
+    background: ${accent};
+    color: ${text_on_accent};
+    font-weight: 600;
+    border: none;
+    border-radius: 22px;
+    min-height: 44px;
+    padding: 0 24px;
+}
+QPushButton#Primary:hover    { background: ${accent_hover}; }
+QPushButton#Primary:pressed  { background: ${accent_pressed}; }
+QPushButton#Primary:focus    { outline: none; border: 2px solid ${accent_soft}; }
+QPushButton#Primary:disabled { background: ${accent_soft}; color: ${text_on_accent}; }
+
+QPushButton#Secondary {
+    background: ${bg_card_raised};
+    color: ${text_primary};
+    font-weight: 600;
+    border: none;
+    border-radius: 22px;
+    min-height: 44px;
+    padding: 0 24px;
+}
+QPushButton#Secondary:hover {
+    background: ${bg_card};
+    border: 1px solid ${border_subtle};
+}
+QPushButton#Secondary:pressed { background: ${bg_card_inset}; }
+QPushButton#Secondary:focus   { outline: none; border: 2px solid ${accent_soft}; }
+QPushButton#Secondary:disabled { color: ${text_muted}; }
+
+QPushButton#Ghost {
+    background: transparent;
+    color: ${text_secondary};
+    font-weight: 600;
+    border: none;
+    border-radius: 18px;
+    min-height: 36px;
+    padding: 0 16px;
+}
+QPushButton#Ghost:hover { background: ${bg_card_raised}; }
+QPushButton#Ghost:pressed { background: ${bg_card_inset}; }
+
+/* Bouton rond icon dessine par RoundButton (paintEvent) */
+
+/* ---------------- Libelles ---------------- */
+
+QLabel { background: transparent; }
+QLabel#LabelPrimary { color: ${text_primary}; }
+QLabel#LabelSecondary { color: ${text_secondary}; }
+QLabel#LabelMuted { color: ${text_muted}; }
+QLabel#LabelOnDark { color: ${text_on_dark}; }
+QLabel#LabelOnDarkMuted { color: ${text_on_dark_muted}; }
+QLabel#LabelOnAccent { color: ${text_on_accent}; }
+QLabel#ImagePlaceholder {
+    color: ${text_muted};
+    background: ${bg_card_inset};
+    border-radius: 16px;
+}
+
+/* ---------------- Actions rapides (paragraph 4.5) ---------------- */
+
+QFrame#QuickAction {
+    background: ${bg_card_inset};
+    border-radius: 40px;
+    border: none;
+}
+QFrame#QuickAction:hover {
+    background: ${bg_card_raised};
+}
+#QuickActionCircle {
+    background: ${bg_card_raised};
+    border-radius: 28px;
+    border: none;
+}
+QLabel#QuickActionLabel {
+    color: ${text_secondary};
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* ---------------- Champs (paragraph 4.11) ---------------- */
+
+QLineEdit {
+    background: ${bg_card_raised};
+    color: ${text_primary};
+    border: none;
+    border-radius: 22px;
+    min-height: 44px;
+    padding: 0 16px;
+    selection-background-color: ${accent_soft};
+}
+QLineEdit:focus { border: 2px solid ${accent}; padding: 0 14px; }
 
 QComboBox {
-    padding: 5px;
-    border: 1px solid #d0d0d0;
-    border-radius: 4px;
-    background: white;
-    selection-background-color: #8e2dc5;
+    background: ${bg_card_raised};
+    color: ${text_primary};
+    border: none;
+    border-radius: 22px;
+    min-height: 44px;
+    padding: 0 16px;
 }
-
-QComboBox:hover {
-    border: 1px solid #a0a0a0;
-}
-
+QComboBox:hover { background: ${bg_card}; }
+QComboBox:focus { border: 2px solid ${accent}; padding: 0 14px; }
 QComboBox::drop-down {
     subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 20px;
-    border-left-width: 1px;
-    border-left-color: #d0d0d0;
-    border-left-style: solid;
-    border-top-right-radius: 3px;
-    border-bottom-right-radius: 3px;
+    subcontrol-position: right center;
+    width: 36px;
+    border: none;
+    background: transparent;
 }
-
+QComboBox::down-arrow {
+    image: url(resources/icons/chevron-down.svg);
+    width: 16px;
+    height: 16px;
+}
 QComboBox QAbstractItemView {
-    border: 1px solid #d0d0d0;
-    selection-background-color: #8e2dc5;
-    selection-color: white;
-}
-
-/* Boutons de navigation */
-#nav_btn {
-    background-color: rgba(255, 255, 255, 0.2);
-    color: white;
+    background: ${bg_card_raised};
+    color: ${text_primary};
     border: none;
-    padding: 8px 15px;
-    border-radius: 4px;
-    font-weight: bold;
+    border-radius: 16px;
+    selection-background-color: ${accent_soft};
+    selection-color: ${text_primary};
+    outline: 0;
+    padding: 6px;
 }
 
-#nav_btn:hover {
-    background-color: rgba(255, 255, 255, 0.3);
+/* ---------------- Barre de progression (paragraph 4.6) ---------------- */
+
+QProgressBar {
+    background: ${bg_card_inset};
+    border: none;
+    border-radius: 15px;
+    min-height: 30px;
+    max-height: 30px;
+    text-align: center;
+    color: transparent;
+}
+QProgressBar::chunk {
+    background: ${bg_card_raised};
+    border-radius: 15px;
+}
+QProgressBar#ProgressAccent {
+    background: ${bg_card_inset};
+    border-radius: 15px;
+    min-height: 28px;
+    max-height: 28px;
+}
+QProgressBar#ProgressAccent::chunk {
+    background: ${accent};
+    border-radius: 14px;
 }
 
-#nav_btn:pressed {
-    background-color: rgba(255, 255, 255, 0.1);
-}
+/* ---------------- Controle segmente (paragraph 4.9) ---------------- */
 
-/* Page d'accueil */
-#home_title {
-    font-size: 35px;
-    font-weight: bold;
-    color: #4b41d1;
-    width: 100vh;
-    padding: 10px;
+#Segmented {
+    background: ${bg_card_inset};
     border-radius: 20px;
-    border:2px solid #4b41d1;
-    margin-bottom: 20px;
 }
-#home_title:hover {
-    color: #2519c9;
-}
-
-
-#home_subtitle {
-    font-size: 16px;
-    color: #0082fc;
-
-}
-/*  */
-
-#home_button {
-    background-color: #2305aa;
-    color: white;
+QPushButton#Segment {
+    background: transparent;
+    color: ${text_muted};
+    font-size: 13px;
+    font-weight: 500;
     border: none;
-    padding: 15px 30px;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: bold;
+    padding: 0;
+}
+QPushButton#Segment:hover { color: ${text_secondary}; }
+#SegmentSlider {
+    background: ${bg_card_raised};
+    border-radius: 16px;
 }
 
-#home_button:hover {
-    background-color: #341d9b;
-}
+/* ---------------- Listes / vues ---------------- */
 
-#home_button:pressed {
-    background-color: #310adf;
-}
-
-#home_button:disabled {
-    background-color: #22097a;
-    color: #e0e0e0;
-}
-
-/* Page des résultats */
-#results_title {
-    font-size: 24px;
-    font-weight: bold;
-    color: #333;
-    margin-bottom: 15px;
-}
-
-#articles_list {
-    background-color: transparent;
+QListWidget, QListView, QDialog QTextBrowser {
+    background: transparent;
     border: none;
     outline: 0;
 }
-
-#articles_list::item:selected {
-    background-color: transparent;
+QListWidget::item {
+    background: transparent;
+    border-radius: 20px;
 }
+QListWidget::item:selected { background: transparent; color: ${text_primary}; }
 
-/* Barre de progression */
-QProgressBar {
-    border: 1px solid #d0d0d0;
+/* ---------------- Scrollbars fines (paragraph 4.12) ---------------- */
+
+QScrollArea { border: none; background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 4px 4px 4px 0;
+}
+QScrollBar::handle:vertical {
+    background: ${scrollbar};
+    min-height: 32px;
     border-radius: 4px;
-    text-align: center;
-    background-color: #f0f0f0;
+}
+QScrollBar::handle:vertical:hover { background: ${scrollbar_hover}; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    margin: 0 4px 4px 4px;
+}
+QScrollBar::handle:horizontal {
+    background: ${scrollbar};
+    min-width: 32px;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal:hover { background: ${scrollbar_hover}; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
+
+/* ---------------- Dialogues / infobulles (paragraph 4.13) ---------------- */
+
+QDialog {
+    background: ${bg_gradient_bottom};
 }
 
-QProgressBar::chunk {
-    background-color: #8e2dc5;
-    border-radius: 3px;
-}
-
-/* Page d'analyse */
-#analysis_title {
-    font-size: 24px;
-    font-weight: bold;
-    color: #333;
-    margin-bottom: 15px;
-}
-
-
-/* Boutons d'export */
-QPushButton#nav_btn {
-    background-color: #8e2dc5;
-    color: white;
+QToolTip {
+    background: ${bg_card_raised};
+    color: ${text_primary};
     border: none;
+    border-radius: 12px;
     padding: 8px 12px;
-    border-radius: 4px;
-    font-weight: bold;
-    margin: 2px;
+    font-size: 13px;
 }
 
-QPushButton#nav_btn:hover {
-    background-color: #7a25a8;
-}
-
-QPushButton#nav_btn:pressed {
-    background-color: #6a1f99;
-}
+QTextBrowser { color: ${text_primary}; }
+QPushButton, QComboBox { font-weight: 500; font-size: 13px; }
+QLineEdit { font-size: 14px; }
