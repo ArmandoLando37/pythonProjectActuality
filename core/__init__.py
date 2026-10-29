@@ -23,5 +23,4 @@ __all__ = [
     'ExportManager'
 ]
 
-# Initialisation du package
-print(f"Chargement du package core version {__version__}")
+# Initialisation du package (sans sortie console)
