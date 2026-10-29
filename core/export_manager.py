@@ -1,12 +1,13 @@
-import pandas as pd
-from openpyxl import Workbook
-from openpyxl.chart import BarChart, Reference
 import os
 
 class ExportManager:
     def export_to_excel(self, articles, filename="news_analysis.xlsx"):
         """Exporte les articles vers un fichier Excel avec graphiques"""
         try:
+            import pandas as pd
+            from openpyxl import Workbook
+            from openpyxl.chart import BarChart, Reference
+
             df = self.create_dataframe(articles)
             if not df.empty:
                 with pd.ExcelWriter(filename, engine='openpyxl') as writer:
@@ -42,6 +43,8 @@ class ExportManager:
     
     def create_statistics_sheet(self, workbook, df):
         """Crée la feuille de statistiques avec graphiques"""
+        from openpyxl.chart import BarChart, Reference
+
         worksheet = workbook.create_sheet('Statistiques')
         
         # Statistiques par source
