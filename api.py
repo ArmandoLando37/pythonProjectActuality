@@ -1,6 +1,9 @@
 import requests
 import os
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class NewsAPIClient:
     def __init__(self):
@@ -10,7 +13,6 @@ class NewsAPIClient:
     def get_api_key(self):
         # Essayer de récupérer la clé API depuis les variables d'environnement
         api_key = os.environ.get("NEWS_API_KEY")
-        # api_key = os.environ.get("17ef26b92e6a4c8d958b010ff6eaa623")
         
         if not api_key:
             # Sinon, essayer de la lire depuis un fichier
@@ -48,41 +50,64 @@ class NewsAPIClient:
                 "q": query,
                 "pageSize": page_size,
                 "sortBy": "publishedAt",
-                "language": "en",  # Recherche en anglais pour plus de résultats
-                "apiKey": self.api_key
+                "language": "en"  # Recherche en anglais pour plus de résultats
             }
         else:
             url = f"{self.base_url}/top-headlines"
             params = {
                 "category": english_category,
                 "pageSize": page_size,
-                "country": "us",  # Actualités US (garder comme avant)
-                "apiKey": self.api_key
+                "country": "us"  # Actualités US (garder comme avant)
             }
         
         print(f"URL: {url}")
-        print(f"Params: {params}")
         
         try:
-            response = requests.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            
-            print(f"Status: {data.get('status')}")
-            print(f"Total results: {data.get('totalResults', 0)}")
-            
-            if data["status"] == "ok":
-                articles = self.process_articles(data["articles"])
-                print(f"Articles traités: {len(articles)}")
-                return articles
-            else:
-                error_msg = data.get('message', 'Unknown error')
-                print(f"Erreur API: {error_msg}")
-                raise Exception(f"Erreur API: {error_msg}")
-                
+            response = requests.get(
+                url,
+                params=params,
+                headers={"X-Api-Key": self.api_key},
+                timeout=15
+            )
         except requests.exceptions.RequestException as e:
-            print(f"Erreur de connexion: {str(e)}")
-            raise Exception(f"Erreur de connexion: {str(e)}")
+            print("Erreur de connexion à NewsAPI.")
+            raise Exception(
+                "Impossible de joindre NewsAPI. Vérifiez votre connexion Internet."
+            ) from e
+
+        try:
+            data = response.json()
+        except ValueError as e:
+            if not response.ok:
+                raise Exception(
+                    f"NewsAPI a répondu avec HTTP {response.status_code}. "
+                    "Vérifiez votre clé API et votre compte NewsAPI."
+                ) from e
+            raise Exception("NewsAPI a renvoyé une réponse invalide.") from e
+
+        if not isinstance(data, dict):
+            raise Exception("NewsAPI a renvoyé une réponse invalide.")
+
+        if not response.ok or data.get("status") != "ok":
+            error_code = data.get("code")
+            error_msg = data.get("message", "Erreur inconnue")
+            if error_code == "apiKeyInvalid":
+                error_msg = (
+                    "La clé API NewsAPI est invalide ou n'est pas encore activée. "
+                    "Vérifiez NEWS_API_KEY dans votre fichier .env."
+                )
+            elif error_code == "apiKeyDisabled":
+                error_msg = (
+                    "Cette clé API NewsAPI est désactivée. Consultez votre compte NewsAPI."
+                )
+            print(f"Erreur NewsAPI ({error_code or response.status_code}): {error_msg}")
+            raise Exception(f"Erreur NewsAPI : {error_msg}")
+
+        print(f"Status: {data.get('status')}")
+        print(f"Total results: {data.get('totalResults', 0)}")
+        articles = self.process_articles(data["articles"])
+        print(f"Articles traités: {len(articles)}")
+        return articles
             
     def process_articles(self, articles):
         processed_articles = []
