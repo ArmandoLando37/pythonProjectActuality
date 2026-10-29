@@ -1,35 +1,37 @@
+# -*- coding: utf-8 -*-
+"""Actus — Lecteur d'actualités (fenêtre principale).
+
+Design system : disign/DISIGN_RULES.md (soft-neumorphism / glass).
+Structure : Sidebar 220px + panneau principal radius 32 (QStackedWidget).
+"""
+
+import os
 import sys
-import webbrowser
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QLabel, QComboBox, QPushButton, 
-                             QListWidget, QListWidgetItem, QFrame, QStackedWidget,
-                             QMessageBox, QProgressBar, QSpacerItem, QSizePolicy, QLineEdit)
-from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QPixmap, QIcon, QFont, QPalette, QColor
-import requests
+from datetime import datetime
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QColor, QPalette
+from PyQt5.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow,
+                             QMessageBox, QStackedWidget, QVBoxLayout,
+                             QWidget)
+
 from api import NewsAPIClient
 from analysis import DataAnalyzer
-from ui.components import ArticleWidget, ChartWidget
-from ui.article_detail import ArticleDetailDialog
-import json
-import os
+from core.favorites_manager import FavoritesManager
+from core.theme_manager import ThemeManager
 from pdf_exporter import PDFExporter
+from ui import components as c
+from ui import pages as p
+from ui.article_detail import ArticleDetailDialog
 
-# Charger les styles CSS
-def load_stylesheet():
-    style_path = os.path.join("resources", "style.css")
-    if os.path.exists(style_path):
-        with open(style_path, "r") as file:
-            return file.read()
-    return ""
 
-# Thread pour récupérer les articles en arrière-plan
+# ------------------------------------------------------------------ workers (§6 / §8.7)
+
 class FetchArticlesThread(QThread):
     articles_fetched = pyqtSignal(object)
     error_occurred = pyqtSignal(str)
-    progress_updated = pyqtSignal(int)
 
-    def __init__(self, api_client, category, query=None):
+    def __init__(self, api_client, category=None, query=None):
         super().__init__()
         self.api_client = api_client
         self.category = category
@@ -37,459 +39,380 @@ class FetchArticlesThread(QThread):
 
     def run(self):
         try:
-            self.progress_updated.emit(30)
-            articles = self.api_client.get_articles(self.category, self.query)
-            self.progress_updated.emit(100)
+            articles = self.api_client.get_articles(
+                self.category, self.query)
             self.articles_fetched.emit(articles)
-        except Exception as e:
-            self.error_occurred.emit(str(e))
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
+
+
+class ExportThread(QThread):
+    export_done = pyqtSignal(bool, str)
+
+    def __init__(self, pdf_exporter, articles, filename):
+        super().__init__()
+        self.pdf_exporter = pdf_exporter
+        self.articles = articles
+        self.filename = filename
+
+    def run(self):
+        try:
+            result = self.pdf_exporter.export_to_pdf(
+                self.articles, self.filename)
+            self.export_done.emit(*result)
+        except Exception as exc:
+            self.export_done.emit(False, f"Erreur d'export : {exc}")
+
+
+# ------------------------------------------------------------------ window
 
 class MainWindow(QMainWindow):
+    PAGE_SIZE = 20
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Lecteur d'actualités ")
-        self.setGeometry(100, 100, 1200, 800)
-        
-        # Initialiser l'API client
+        self.setWindowTitle("Actus — Lecteur d'actualités")
+        self.setMinimumSize(1100, 700)
+        self.resize(1240, 820)
+
+        self.theme_manager = ThemeManager()
         self.api_client = NewsAPIClient()
-        
-        # Initialiser l'analyseur de données
         self.analyzer = DataAnalyzer()
-        
-        # Configurer le style
-        self.setStyleSheet(load_stylesheet())
-        
-        #     # Variables pour les articles
-        # self.current_articles = []  # Articles actuels affichés
-        # self.all_articles = []      # Tous les articles chargés (pour export/analyse)
-        # self.page_size = 20
-        # self.current_page_num = 1
-            # VARIABLES CRITIQUES - Initialiser explicitement
-        self.all_articles = []      # ← DOIT être initialisé ici
-        self.current_articles = []  # ← DOIT être initialisé ici
-        self.page_size = 20
-        self.current_page_num = 1
-        self.current_page = "home"
-        
-        # Créer l'interface
-        self.setup_ui()
-
-        # Initialiser l'exporteur PDF
+        self.favorites = FavoritesManager()
         self.pdf_exporter = PDFExporter()
-        
-        # Charger les catégories
-        self.categories = [
-            "Général", "Affaires", "Divertissement", 
-            "Santé", "Sports", "Technologie"
-        ]
-        self.category_combo.addItems(self.categories)
-        
-        # Page actuelle
-        self.current_page = "home"
-        
-    def setup_ui(self):
-        # Widget central
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # Layout principal
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # Navbar
-        self.setup_navbar()
-        main_layout.addWidget(self.navbar)
-        
-        # Widget empilé pour les pages
-        self.stacked_widget = QStackedWidget()
-        main_layout.addWidget(self.stacked_widget)
-        
-        # Page d'accueil
-        self.home_page = self.create_home_page()
-        self.stacked_widget.addWidget(self.home_page)
-        
-        # Page des résultats
-        self.results_page = self.create_results_page()
-        self.stacked_widget.addWidget(self.results_page)
-        
-        # Page d'analyse
-        self.analysis_page = self.create_analysis_page()
-        self.stacked_widget.addWidget(self.analysis_page)
-        
-        # Barre de progression
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
-        
-    def setup_navbar(self):
-        self.navbar = QFrame()
-        self.navbar.setObjectName("navbar")
-        navbar_layout = QHBoxLayout(self.navbar)
-        navbar_layout.setContentsMargins(20, 10, 20, 10)
-        
-        # Logo et titre
-        logo_label = QLabel()
-        logo_label.setObjectName("logoStyle")
-        logo_pixmap = QPixmap(os.path.join("resources", "logo.png"))
-        
-        if logo_pixmap.isNull():
-            logo_label.setText("N")
-            logo_label.setStyleSheet("font-size: 24px;")
-        else:
-            logo_label.setPixmap(logo_pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        
-        title_label = QLabel("Lecteur d'actualités")
-        title_label.setObjectName("navbar_title")
-        
-        # Catégories
-        self.category_combo = QComboBox()
-        self.category_combo.setMinimumWidth(150)
-        
-        # Boutons
-        self.home_btn = QPushButton("Accueil")
-        self.home_btn.setObjectName("nav_btn")
-        self.home_btn.clicked.connect(lambda: self.show_page("home"))
-        
-        self.refresh_btn = QPushButton("Actualiser")
-        self.refresh_btn.setObjectName("nav_btn")
-        self.refresh_btn.clicked.connect(self.refresh_articles)
-        
-        self.analysis_btn = QPushButton("Analyser")
-        self.analysis_btn.setObjectName("nav_btn")
-        self.analysis_btn.clicked.connect(lambda: self.show_page("analysis"))
-        
-        # Champ de recherche
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Rechercher...")
-        self.search_input.setMinimumWidth(200)
-        self.search_input.returnPressed.connect(self.on_search)
-        
-        # Bouton de recherche
-        self.search_btn = QPushButton("🔍")
-        self.search_btn.setObjectName("nav_btn")
-        self.search_btn.clicked.connect(self.on_search)
-        
-        # Ajouter les éléments à la navbar
-        navbar_layout.addWidget(logo_label)
-        navbar_layout.addWidget(title_label)
-        navbar_layout.addSpacerItem(QSpacerItem(20, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
-        
-        # Recherche
-        navbar_layout.addWidget(QLabel("Recherche:"))
-        navbar_layout.addWidget(self.search_input)
-        navbar_layout.addWidget(self.search_btn)
-        navbar_layout.addSpacing(10)
-        
-        # Catégorie
-        navbar_layout.addWidget(QLabel("Catégorie:"))
-        navbar_layout.addWidget(self.category_combo)
-        navbar_layout.addSpacing(10)
-        
-        # Boutons de navigation
-        navbar_layout.addWidget(self.home_btn)
-        navbar_layout.addWidget(self.refresh_btn)
-        navbar_layout.addWidget(self.analysis_btn)
 
-         # Boutons d'export
-        self.export_pdf_btn = QPushButton("Export PDF")
-        self.export_pdf_btn.setObjectName("nav_btn")
-        self.export_pdf_btn.clicked.connect(self.export_to_pdf)
-        
-        # self.export_summary_btn = QPushButton(" Résumé PDF")
-        # self.export_summary_btn.setObjectName("nav_btn")
-        # self.export_summary_btn.clicked.connect(self.export_summary_pdf)
-        
-        # Ajouter à la navbar
-        navbar_layout.addWidget(self.export_pdf_btn)
-        # navbar_layout.addWidget(self.export_summary_btn)
-        
-    def on_search(self):
-        """Lance une recherche lorsque le bouton est cliqué ou Enter pressé"""
-        query = self.search_input.text().strip()
-        if query:
-            self.perform_search(query)
-        else:
-            QMessageBox.warning(self, "Recherche", "Veuillez entrer un terme de recherche")
+        self._themable = []
+        self._article_cards = []
+        self._threads = []
+
+        self.all_articles = []
+        self.current_page = "home"
+        self.analysis_period = "day"
+
+        self._build_ui()
+
+    # ------------------------------------------------------------ construction
+
+    def _build_ui(self):
+        backdrop = QFrame()
+        backdrop.setObjectName("AppBackground")
+        self.setCentralWidget(backdrop)
+
+        shell = QHBoxLayout(backdrop)
+        shell.setContentsMargins(24, 24, 24, 24)
+        shell.setSpacing(20)
+
+        self.sidebar = c.SidebarWidget(self.theme_manager)
+        self.sidebar.nav_changed.connect(self._navigate)
+        self.sidebar.refresh_requested.connect(self.fetch_articles)
+        self.theme_manager.apply_shadow(self.sidebar, 3)
+        self._themable.append(self.sidebar)
+        shell.addWidget(self.sidebar)
+
+        self.main_panel = QFrame()
+        self.main_panel.setObjectName("MainPanel")
+        self.theme_manager.apply_shadow(self.main_panel, 3)
+        shell.addWidget(self.main_panel, 1)
+
+        panel_layout = QVBoxLayout(self.main_panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        self.stacked = QStackedWidget()
+        panel_layout.addWidget(self.stacked)
+
+        self._register_themable(self._build_pages())
+
+    def _build_pages(self):
+        self.home_page = p.build_home(self)
+        self.articles_page = p.build_articles(self)
+        self.favorites_page = p.build_favorites(self)
+        self.analysis_page = p.build_analysis(self)
+
+        self.stacked.addWidget(self.home_page)
+        self.stacked.addWidget(self.articles_page)
+        self.stacked.addWidget(self.favorites_page)
+        self.stacked.addWidget(self.analysis_page)
+        return (self.home_page, self.articles_page, self.favorites_page,
+                self.analysis_page)
+
+    def _register_themable(self, pages):
+        """Recense tout widget custom nécessitant refresh_theme (§8.2)."""
+        registered = set()
+
+        def walk(widget):
+            if id(widget) in registered:
+                return
+            registered.add(id(widget))
+            if hasattr(widget, "refresh_theme") and widget not in self._themable:
+                self._themable.append(widget)
+            for child in widget.findChildren(QWidget):
+                walk(child)
+
+        for page in pages:
+            walk(page)
+
+    # ------------------------------------------------------------ navigation
+
+    def _navigate(self, key):
+        mapping = {"home": self.home_page, "articles": self.articles_page,
+                   "favorites": self.favorites_page,
+                   "analysis": self.analysis_page}
+        page = mapping.get(key, self.home_page)
+        self.stacked.setCurrentWidget(page)
+        self.current_page = key
+        if key == "analysis":
+            self.refresh_analysis()
+
+    def handle_quick_action(self, key):
+        if key == "search":
+            self._navigate("articles")
+            self.search_bar.input.setFocus()
+        elif key == "favorites":
+            self._navigate("favorites")
+        elif key == "export":
+            self.export_to_pdf()
+        elif key == "analysis":
+            self._navigate("analysis")
+        elif key == "theme":
+            self.toggle_theme()
+
+    def toggle_theme(self):
+        theme = self.theme_manager.toggle_theme(QApplication.instance())
+        for widget in self._themable:
+            widget.refresh_theme()
+        self._update_theme_icon("moon" if theme == "dark" else "sun")
+
+    def _update_theme_icon(self, icon_name):
+        for action in self.quickbar.actions:
+            if action.action_key == "theme":
+                action.icon_name = icon_name
+                action._update_icon()
+
+    # ------------------------------------------------------------ données
+
+    def fetch_articles(self):
+        category = None
+        self.start_fetch(category=None, query=None)
+        self.set_busy(message="Chargement de l'actualité…")
+
+    def start_fetch(self, category=None, query=None):
+        thread = FetchArticlesThread(self.api_client, category, query)
+        thread.articles_fetched.connect(self.set_articles)
+        thread.error_occurred.connect(self.handle_fetch_error)
+        self._threads.append(thread)
+        thread.start()
+        self.set_busy(True)
+
+    def set_busy(self, busy=True, message=None):
+        self.articles_refresh.setText("Chargement…" if busy else "Actualiser")
+        self.articles_refresh.setEnabled(not busy)
+        if not busy and message:
+            self.statusBar().showMessage(message, 4000)
+
+    def set_articles(self, articles):
+        self.set_busy(False)
+        self.all_articles = list(articles or [])
+        self.render_articles()
+        self.render_favorites()
+        self.update_home_stats()
+        if self.current_page == "analysis":
+            self.refresh_analysis()
+        self.statusBar().showMessage(
+            f"{len(self.all_articles)} articles chargés.", 4000)
+
+    def handle_fetch_error(self, error_msg):
+        self.set_busy(False)
+        QMessageBox.critical(self, "Erreur",
+                             f"Impossible de charger les articles :\n"
+                             f"{error_msg}")
 
     def perform_search(self, query):
-        """Effectue une recherche d'articles"""
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        
-        # Désactiver le bouton de recherche pendant le chargement
-        self.search_btn.setEnabled(False)
-        self.search_btn.setText("Recherche...")
-        
-        # Lancer le thread pour rechercher les articles
-        self.thread = FetchArticlesThread(self.api_client, None, query)
-        self.thread.articles_fetched.connect(self.display_search_results)
-        self.thread.error_occurred.connect(self.handle_search_error)
-        self.thread.progress_updated.connect(self.progress_bar.setValue)
-        self.thread.start()
+        self.start_fetch(query=query)
+        self.set_busy(True)
 
-    def display_search_results(self, articles):
-        """Affiche les résultats de la recherche avec pagination"""
-        self.progress_bar.setVisible(False)
-        self.search_btn.setEnabled(True)
-        self.search_btn.setText("🔍")
-        
-        print(f"=== DISPLAY SEARCH RESULTS ===")
-        print(f"Articles recherche: {len(articles) if articles else 0}")
-        
-        if not articles:
-            QMessageBox.information(self, "Recherche", "Aucun article trouvé pour votre recherche.")
-            return
-            
-        # STOCKER EXPLICITEMENT
-        self.all_articles = articles.copy()  # ← Copie explicite
-        print(f"all_articles (recherche) défini: {len(self.all_articles)} articles")
-        
-        self.current_page_num = 1
-        
-        # Afficher la page des résultats
-        self.show_page("results")
-        
-        # Mettre à jour le titre
-        query = self.search_input.text()
-        self.results_title.setText(f"Résultats pour \"{query}\" ({len(articles)} articles)")
-        
-        # Afficher la première page
-        # self.show_current_page()
+    # ------------------------------------------------------------ rendu listes
 
-    def handle_search_error(self, error_msg):
-        """Gère les erreurs de recherche"""
-        self.progress_bar.setVisible(False)
-        self.search_btn.setEnabled(True)
-        self.search_btn.setText("🔍")
-        print(f"Erreur recherche: {error_msg}")
-        QMessageBox.critical(self, "Erreur de recherche", f"Erreur lors de la recherche: {error_msg}")
-        
-    def create_home_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignCenter)
-        
-        # Titre
-        title = QLabel("Lecteur d'actualités")
-        title.setObjectName("home_title")
-        
-        # Sous-titre
-        subtitle = QLabel("Restez informé avec les dernières actualités du monde entier")
-        subtitle.setObjectName("home_subtitle")
-        
-        # Bouton
-        self.fetch_btn = QPushButton("Charger les actualités")
-        self.fetch_btn.setObjectName("home_button")
-        self.fetch_btn.clicked.connect(self.fetch_articles)
-        self.fetch_btn.setMinimumSize(200, 50)
-        
-        # Ajouter au layout
-        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
-        layout.addWidget(title, alignment=Qt.AlignCenter)
-        layout.addWidget(subtitle, alignment=Qt.AlignCenter)
-        layout.addSpacing(30)
-        layout.addWidget(self.fetch_btn, alignment=Qt.AlignCenter)
-        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
-        
-        return page
-        
-    def create_results_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Titre de la page
-        self.results_title = QLabel("Articles récents")
-        self.results_title.setObjectName("results_title")
-        layout.addWidget(self.results_title)
-        
-        # Liste des articles
-        self.articles_list = QListWidget()
-        self.articles_list.setObjectName("articles_list")
-        self.articles_list.setSpacing(10)
-        layout.addWidget(self.articles_list)
-        
-        return page
-        
-    def create_analysis_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Titre
-        title = QLabel("Analyse des actualités")
-        title.setObjectName("analysis_title")
-        layout.addWidget(title)
-        
-        # Widget pour les graphiques
-        self.chart_widget = ChartWidget()
-        layout.addWidget(self.chart_widget)
-        
-        return page
-        
-    def show_page(self, page_name):
-        if page_name == "home":
-            self.stacked_widget.setCurrentWidget(self.home_page)
-            self.current_page = "home"
-        elif page_name == "results":
-            self.stacked_widget.setCurrentWidget(self.results_page)
-            self.current_page = "results"
-        elif page_name == "analysis":
-            self.stacked_widget.setCurrentWidget(self.analysis_page)
-            self.current_page = "analysis"
-            self.perform_analysis()
-            
-    def fetch_articles(self):
-        category = self.category_combo.currentText().lower()
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        
-        # Désactiver le bouton pendant le chargement
-        self.fetch_btn.setEnabled(False)
-        self.fetch_btn.setText("Chargement...")
-        
-        # Lancer le thread pour récupérer les articles
-        self.thread = FetchArticlesThread(self.api_client, category)
-        self.thread.articles_fetched.connect(self.display_articles)
-        self.thread.error_occurred.connect(self.handle_error)
-        self.thread.progress_updated.connect(self.progress_bar.setValue)
-        self.thread.start()
-        
-    def refresh_articles(self):
-        if self.current_page == "results":
-            self.fetch_articles()
-        
-    def display_articles(self, articles):
-        self.progress_bar.setVisible(False)
-        self.fetch_btn.setEnabled(True)
-        self.fetch_btn.setText("Charger les actualités")
-        
-        print(f"Articles reçus: {len(articles) if articles else 0}")
-        
-        if not articles:
-            QMessageBox.information(self, "Aucun article", "Aucun article trouvé pour cette catégorie.")
+    def render_articles(self):
+        while self.cards_layout.count():
+            item = self.cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self._article_cards = []
+
+        favorites_urls = {fav.get("url") for fav in self.favorites.favorites}
+        theme = self.theme_manager
+        for article in self.all_articles:
+            is_fav = article.get("url") in favorites_urls
+            card = c.ArticleCard(article, theme, is_favorite=is_fav)
+            card.article_opened.connect(self.open_article)
+            card.favorite_toggled.connect(self.toggle_favorite)
+            self.cards_layout.addWidget(card)
+            self._article_cards.append(card)
+
+        if not self.all_articles:
+            empty = QWidget()
+            empty_layout = QVBoxLayout(empty)
+            empty_layout.setContentsMargins(0, 80, 0, 0)
+            note = c.make_label("Aucun article pour le moment.\n"
+                                "Utilisez « Actualiser » ou la recherche.",
+                                "body", c.LABEL_SECONDARY)
+            note.setAlignment(Qt.AlignCenter)
+            empty_layout.addWidget(note)
+            self.cards_layout.addWidget(empty)
+
+        count = len(self.all_articles)
+        self.articles_card_count.setText(f"{count} article(s)")
+
+    def render_favorites(self):
+        while self.favorites_layout.count():
+            item = self.favorites_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        theme = self.theme_manager
+        favorites = list(self.favorites.favorites)
+        for article in favorites:
+            card = c.ArticleCard(article, theme, is_favorite=True)
+            card.article_opened.connect(self.open_article)
+            card.favorite_toggled.connect(self.toggle_favorite)
+            self.favorites_layout.addWidget(card)
+        if not favorites:
+            empty = QWidget()
+            empty_layout = QVBoxLayout(empty)
+            empty_layout.setContentsMargins(0, 80, 0, 0)
+            note = c.make_label(
+                "Aucun favori. Ajoutez-en avec l'étoile " "★ d'une carte.",
+                "body", c.LABEL_SECONDARY)
+            note.setAlignment(Qt.AlignCenter)
+            empty_layout.addWidget(note)
+            self.favorites_layout.addWidget(empty)
+        self.favorites_count.setText(f"{len(favorites)} favori(s)")
+
+    def toggle_favorite(self, article, wanted):
+        url = article.get("url", "")
+        if not url:
             return
-            
-        # Stocker tous les articles pour l'export PDF
-        self.all_articles = articles.copy()
-        print(f"📦 Articles stockés pour export: {len(self.all_articles)}")
-        
-        # Afficher la page des résultats
-        self.show_page("results")
-        
-        # Mettre à jour le titre
-        category = self.category_combo.currentText()
-        self.results_title.setText(f"Articles {category} ({len(articles)} résultats)")
-        
-        # Effacer la liste actuelle
-        self.articles_list.clear()
-        
-        # Ajouter tous les articles à la liste (sans pagination)
-        for article in articles:
-            item = QListWidgetItem()
-            widget = ArticleWidget(article)
-            widget.article_clicked.connect(self.show_article_detail)
-            item.setSizeHint(widget.sizeHint())
-            self.articles_list.addItem(item)
-            self.articles_list.setItemWidget(item, widget)
-        
-    def show_article_detail(self, article_data):
-        """Affiche les détails de l'article dans une fenêtre modale"""
-        dialog = ArticleDetailDialog(article_data, self)
+        if wanted:
+            self.favorites.add_favorite(article)
+        else:
+            self.favorites.remove_favorite(url)
+        favorites_urls = {fav.get("url") for fav in self.favorites.favorites}
+        for card in self._article_cards:
+            match = card.article.get("url") == url
+            if match and card.star.isChecked() != (url in favorites_urls):
+                card.star.setChecked(url in favorites_urls)
+        self.render_favorites()
+
+    def open_article(self, article):
+        dialog = ArticleDetailDialog(article, self.theme_manager, self)
         dialog.exec_()
-        
-    def perform_analysis(self):
-        # Utiliser all_articles au lieu de current_articles
-        if hasattr(self, 'all_articles') and self.all_articles:
-            print(f"🔍 Analyse de {len(self.all_articles)} articles...")
-            
-            # Générer les graphiques sur TOUS les articles
-            sources_fig = self.analyzer.articles_by_source(self.all_articles)
-            dates_fig = self.analyzer.articles_by_date(self.all_articles)
-            
-            # Afficher les graphiques
-            self.chart_widget.display_charts(sources_fig, dates_fig)
-        else:
-            print("⚠️ Aucune donnée à analyser")
-            self.chart_widget.show_message("Aucune donnée à analyser. Veuillez d'abord charger des articles.")
-            
-    def open_article_url(self, url):
-        webbrowser.open(url)
-        
-    def handle_error(self, error_msg):
-        self.progress_bar.setVisible(False)
-        self.fetch_btn.setEnabled(True)
-        self.fetch_btn.setText("Charger les actualités")
-        print(error_msg)
-        QMessageBox.critical(self, "Erreur", "Connectez-vous à internet")
-        
+
+    # ------------------------------------------------------------ accueil stats
+
+    def update_home_stats(self):
+        stats = self.analyzer.stats(self.all_articles) \
+            if self.all_articles else None
+        total = len(self.all_articles)
+        loaded = min(total, self.PAGE_SIZE)
+        self.home_progress.setMaximum(max(1, self.PAGE_SIZE))
+        self.home_progress.animate_to(loaded)
+        self.home_progress_value.setText(str(loaded))
+        if stats:
+            self.home_goal_subtitle.setText(
+                "Voici le flux du moment.")
+            self.home_dark_stat.setText(stats["dominant"])
+            self.home_dark_note.setText(
+                f"{total} articles de {stats['sources']} sources.")
+            self.stat_total.stat_value.setText(str(total))
+            self.stat_sources.stat_value.setText(str(stats["sources"]))
+            last = stats["last"].strftime("%d/%m") if stats["last"] else "—"
+            self.stat_last.stat_value.setText(str(last))
+
+    # ------------------------------------------------------------ analyse
+
+    def refresh_analysis(self):
+        self.analysis_period = self.analysis_segment.current_key()
+        if not self.all_articles:
+            self.analysis_empty.setVisible(True)
+            self.analysis_bars_period.set_data([])
+            self.analysis_bars_sources.set_data([])
+            self.analysis_ring.set_value(0.0, animate=False)
+            self.analysis_ring_value.setText("0%")
+            self.analysis_ring_source.setText("—")
+            self.analysis_dark_stat.setText("0")
+            self.period_value.setText("")
+            return
+        self.analysis_empty.setVisible(False)
+
+        stats = self.analyzer.stats(self.all_articles)
+        window = self.analyzer.by_day(self.all_articles, self.analysis_period)
+        sources = self.analyzer.by_source(self.all_articles, top=10)
+        period_total = sum(count for _label, count in window)
+
+        period_labels = {"day": "Journalier", "week": "Hebdomadaire",
+                         "month": "Mensuel"}
+        self.period_label.setText(
+            f"Articles — {period_labels.get(self.analysis_period, '/')}")
+        self.period_value.setText(str(period_total))
+        self.analysis_dark_stat.setText(str(period_total))
+        self.analysis_dark_note.setText(
+            f"Total du flux : {stats['total']} articles.")
+        self.analysis_bars_period.set_data(window)
+
+        source_labeled = [(label[:12], count) for label, count in sources]
+        self.analysis_bars_sources.set_data(source_labeled)
+
+        if stats["total"]:
+            share = stats["dominant_count"] / stats["total"]
+            self.analysis_ring.set_value(share)
+            self.analysis_ring_value.setText(f"{int(round(share * 100))}%")
+            self.analysis_ring_source.setText(stats["dominant"])
+
+    # ------------------------------------------------------------ export
+
     def export_to_pdf(self):
-        """Exporte les articles en PDF"""
-        # Vérifier si all_articles existe et n'est pas vide
-        print("=== EXPORT PDF CLICK ===")
-        print(f"hasattr all_articles: {hasattr(self, 'all_articles')}")
-        
-        if hasattr(self, 'all_articles'):
-            print(f"all_articles length: {len(self.all_articles)}")
-            print(f"all_articles type: {type(self.all_articles)}")
-            print(f"all_articles content: {self.all_articles[:1] if self.all_articles else 'VIDE'}")
-        
-        # Vérification robuste
-        if hasattr(self, 'all_articles') and self.all_articles and len(self.all_articles) > 0:
-            from datetime import datetime
-            filename = f"articles_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            
-            print(f" Export de {len(self.all_articles)} articles vers {filename}")
-            success, message = self.pdf_exporter.export_to_pdf(self.all_articles, filename)
-            
-            if success:
-                QMessageBox.information(self, "Export PDF", message)
-            else:
-                QMessageBox.warning(self, "Erreur PDF", message)
-        else:
-            print(" Aucun article à exporter")
+        if not self.all_articles:
             QMessageBox.warning(
-                self, 
-                "Export PDF", 
-                "Aucun article à exporter. Veuillez d'abord charger des articles en utilisant le bouton 'Charger les actualités' ou la recherche."
-            )
+                self, "Export PDF",
+                "Aucun article à exporter.\n"
+                "Chargez d'abord le flux depuis l'accueil ou la recherche.")
+            return
+        filename = (f"articles_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    f".pdf")
+        thread = ExportThread(self.pdf_exporter, self.all_articles, filename)
+        thread.export_done.connect(self._on_export_done)
+        self._threads.append(thread)
+        thread.start()
+        self.set_busy(True)
 
-    # def export_summary_pdf(self):
-    #     """Exporte un résumé statistique en PDF"""
-    #     if hasattr(self, 'all_articles') and self.all_articles:
-    #         from datetime import datetime
-    #         filename = f"resume_articles_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            
-    #         print(f"Export du résumé de {len(self.all_articles)} articles...")
-    #         success, message = self.pdf_exporter.export_summary_pdf(self.all_articles, filename)
-            
-    #         if success:
-    #             QMessageBox.information(self, "Résumé PDF", message)
-    #         else:
-    #             QMessageBox.warning(self, "Erreur Résumé", message)
-    #     else:
-    #         QMessageBox.warning(self, "Résumé PDF", "Aucun article à analyser. Veuillez d'abord charger des articles.")
+    def _on_export_done(self, ok, message):
+        self.set_busy(False)
+        if ok:
+            QMessageBox.information(self, "Export PDF", message)
+        else:
+            QMessageBox.warning(self, "Export PDF", message)
 
-if __name__ == "__main__":
+
+def main():
+    # High-DPI : à faire AVANT QApplication (§8.6)
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
-    
-    # Définir la palette de couleurs pour l'application
+
+    tm = ThemeManager()
+    c.init_fonts(tm)
+    tm.apply_theme(app)
+
     palette = QPalette()
-    palette.setColor(QPalette.Window, QColor(245, 245, 245))
-    palette.setColor(QPalette.WindowText, QColor(33, 33, 33))
-    palette.setColor(QPalette.Base, QColor(255, 255, 255))
-    palette.setColor(QPalette.AlternateBase, QColor(233, 233, 233))
-    palette.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
-    palette.setColor(QPalette.ToolTipText, QColor(33, 33, 33))
-    palette.setColor(QPalette.Text, QColor(33, 33, 33))
-    palette.setColor(QPalette.Button, QColor(240, 240, 240))
-    palette.setColor(QPalette.ButtonText, QColor(33, 33, 33))
-    palette.setColor(QPalette.BrightText, Qt.red)
-    palette.setColor(QPalette.Highlight, QColor(142, 45, 197))
-    palette.setColor(QPalette.HighlightedText, Qt.white)
+    palette.setColor(QPalette.Highlight, tm.qcolor("accent"))
+    palette.setColor(QPalette.HighlightedText, QColor("#FFFFFF"))
     app.setPalette(palette)
-    
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
