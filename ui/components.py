@@ -29,11 +29,13 @@ _FONT_FAMILY = None
 
 
 def init_fonts(theme_manager):
-    """Charge la police embarquée et mémorise la famille."""
-    global _FONT_FAMILY
+    """Charge la police embarquée, mémorise la famille et la couleur
+    d'icône par défaut du thème global."""
+    global _FONT_FAMILY, _ICON_DEFAULT
     family = theme_manager.load_fonts()
     ui_family = theme_manager.preferred_family(family)
     _FONT_FAMILY = ui_family.split(",")[0].strip().strip("'\"")
+    _ICON_DEFAULT = theme_manager.color("text.primary")
     return _FONT_FAMILY
 
 
@@ -78,6 +80,7 @@ def make_label(text, role="body", object_name=None):
 
 DEFAULT_ICONS_DIR = os.path.join("resources", "icons")
 _ICON_CACHE = {}
+_ICON_DEFAULT = "#111111"  # resolved by init_fonts() from the global theme
 
 
 def _hex_color(color):
@@ -87,10 +90,11 @@ def _hex_color(color):
         return color
 
 
-def svg_pixmap(name, color="#111111", size=24, stroke_width=1.75,
+def svg_pixmap(name, color=None, size=24, stroke_width=1.75,
                icons_dir=None):
-    """Rend une icône SVG (style Lucide) recolorée, avec cache (§8.7)."""
-    color = _hex_color(color)
+    """Rend une icône SVG (style Lucide) recolorée, avec cache (§8.7).
+    color=None -> couleur du texte du thème global (settée par init_fonts)."""
+    color = _hex_color(color or _ICON_DEFAULT)
     key = (name, color, size, stroke_width)
     if key in _ICON_CACHE:
         return _ICON_CACHE[key]
@@ -123,7 +127,7 @@ def svg_pixmap(name, color="#111111", size=24, stroke_width=1.75,
     return pixmap
 
 
-def icon_for(name, color="#111111", size=24, stroke_width=1.75):
+def icon_for(name, color=None, size=24, stroke_width=1.75):
     return QIcon(svg_pixmap(name, color, size, stroke_width))
 
 
@@ -260,12 +264,14 @@ def pill_button(text, object_name="Secondary", parent=None):
 
 class RoundButton(QPushButton):
     """Rond icône (§4.4) : inset au repos, raised au survol, accent si
-    checked ou always_accent."""
+    checked ou always_accent. `checked_icon` permet une icône distincte
+    (ex : cercle au repos -> coche accent)."""
 
     def __init__(self, icon_name, size=44, theme_manager=None,
-                 always_accent=False, parent=None):
+                 always_accent=False, checked_icon=None, parent=None):
         super().__init__(parent)
         self.icon_name = icon_name
+        self.checked_icon_name = checked_icon or icon_name
         self.btn_size = size
         self.theme_manager = theme_manager
         self.always_accent = always_accent
@@ -311,7 +317,8 @@ class RoundButton(QPushButton):
 
         drop = 1 if pressed else 0
         size = max(16, int(self.btn_size * 0.40))
-        icon = svg_pixmap(self.icon_name, icon_color, size)
+        icon_name = self.checked_icon_name if accent else self.icon_name
+        icon = svg_pixmap(icon_name, icon_color, size)
         painter.drawPixmap(
             rect.left() + (rect.width() - size) // 2,
             rect.top() + (rect.height() - size) // 2 + drop,
@@ -330,18 +337,31 @@ class RoundButton(QPushButton):
 # ------------------------------------------------------------------ sidebar (§4.1)
 
 class Circle(QFrame):
-    """Petit disque (logo, avatar)."""
+    """Petit disque (logo, avatar). Resynchronise son fond depuis les
+    tokens au changement de thème si theme_manager est fourni."""
 
-    def __init__(self, hex_bg, diameter=44, parent=None):
+    def __init__(self, hex_bg, diameter=44, parent=None, theme_manager=None,
+                 token_name="bg.card.raised"):
         super().__init__(parent)
         self.setFixedSize(diameter, diameter)
-        self.setStyleSheet(
-            "background: %s; border-radius: %dpx;" % (hex_bg, diameter // 2))
+        self.theme_manager = theme_manager
+        self.token_name = token_name
+        self._diameter = diameter
+        self._set_bg(hex_bg)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
 
+    def _set_bg(self, hex_bg):
+        self.setStyleSheet(
+            "background: %s; border-radius: %dpx;" % (hex_bg,
+                                                      self._diameter // 2))
+
     def set_child(self, widget):
         self._layout.addWidget(widget)
+
+    def refresh_theme(self):
+        if self.theme_manager:
+            self._set_bg(self.theme_manager.color(self.token_name))
 
 
 class SidebarButton(QPushButton):
@@ -373,14 +393,14 @@ class SidebarButton(QPushButton):
         if self.isChecked():
             painter.setBrush(QBrush(self.theme_manager.qcolor("accent")))
         elif self.underMouse():
-            painter.setBrush(QBrush(QColor(255, 255, 255, 36)))
+            painter.setBrush(QBrush(self.theme_manager.qcolor("sidebar.hover")))
         else:
-            painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
+            painter.setBrush(QBrush(self.theme_manager.qcolor("sidebar.rest")))
         painter.drawEllipse(circle)
 
         icon_size = 15
         color = self.theme_manager.color("text.on-accent") \
-            if self.isChecked() else "rgba(255,255,255,0.75)"
+            if self.isChecked() else self.theme_manager.color("text.on-dark.muted")
         icon = svg_pixmap(self.icon_name, color, icon_size)
         painter.drawPixmap(
             circle.left() + (circle_d - icon_size) // 2,
@@ -393,7 +413,7 @@ class SidebarButton(QPushButton):
             font = role_font("label")
             font.setWeight(63)
         else:
-            painter.setPen(QColor(255, 255, 255, 170))
+            painter.setPen(self.theme_manager.qcolor("text.on-dark.muted"))
             font = role_font("label")
         painter.setFont(font)
         painter.drawText(text_rect, int(Qt.AlignVCenter), self.text())
@@ -410,6 +430,7 @@ class SidebarWidget(QFrame):
         ("articles", "Articles", "newspaper"),
         ("favorites", "Favoris", "star"),
         ("analysis", "Analyse", "bar-chart-3"),
+        ("about", "À propos", "info"),
     ]
 
     def __init__(self, theme_manager, parent=None):
@@ -425,15 +446,17 @@ class SidebarWidget(QFrame):
         layout.setContentsMargins(16, 24, 16, 16)
         layout.setSpacing(6)
 
-        logo = Circle(theme_manager.color("bg.card.raised"), 44)
+        self.logo = Circle(theme_manager.color("bg.card.raised"), 44,
+                           theme_manager=theme_manager,
+                           token_name="bg.card.raised")
         logo_child = make_label("N", "h2", LABEL_PRIMARY)
         logo_child.setAlignment(Qt.AlignCenter)
         logo_child.setAttribute(Qt.WA_TransparentForMouseEvents)
-        logo.set_child(logo_child)
+        self.logo.set_child(logo_child)
 
         header = QHBoxLayout()
         header.setSpacing(12)
-        header.addWidget(logo)
+        header.addWidget(self.logo)
 
         col = QVBoxLayout()
         col.setSpacing(2)
@@ -475,6 +498,7 @@ class SidebarWidget(QFrame):
         return "home"
 
     def refresh_theme(self):
+        self.logo.refresh_theme()
         for button in self.buttons.values():
             button.refresh_theme()
         self.zap.setPixmap(svg_pixmap("zap", self.theme_manager.color("accent"),
@@ -673,7 +697,9 @@ class TokenProgressBar(QProgressBar):
 
 
 class RingProgress(QWidget):
-    """Anneau custom QPainter (§4.7) : piste inset + arc accent."""
+    """Anneau custom QPainter (§4.7) : piste inset + arc plein
+    (chart.bar — l'accent est réservé au sombre pour garantir 3:1
+    sur la piste en clair, cf. audit d'outils/check_contrast.py)."""
 
     def __init__(self, theme_manager, size=120, thickness=10, parent=None):
         super().__init__(parent)
@@ -716,7 +742,7 @@ class RingProgress(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         track = self.theme_manager.qcolor("bg.card.inset")
-        accent = self.theme_manager.qcolor("accent")
+        arc = self.theme_manager.qcolor("chart.bar")
 
         side = min(self.width(), self.height()) - self.thickness * 2
         rect = QRect((self.width() - side) // 2,
@@ -724,7 +750,7 @@ class RingProgress(QWidget):
 
         painter.setPen(QPen(track, self.thickness, Qt.SolidLine, Qt.RoundCap))
         painter.drawArc(rect, 0, 360 * 16)
-        painter.setPen(QPen(accent, self.thickness, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(arc, self.thickness, Qt.SolidLine, Qt.RoundCap))
         span = int(360 * 16 * self._value)
         painter.drawArc(rect, 90 * 16, -span)
 
@@ -808,16 +834,24 @@ class BarChartWidget(QWidget):
 # ------------------------------------------------------------------ carte d'article (§9)
 
 class ArticleCard(QFrame):
-    """Carte d'article : visuel 96px, h3, source label, date caption, ★."""
+    """Carte d'article : visuel 96px, h3, source label, date caption, ★.
+
+    En mode sélection (selectable=True), une case ronde « check » (même
+    style que l'étoile) précède le visuel ; l'état coché dessine le
+    liseré accent via la propriété QSS `selected` (voir style.css).
+    """
 
     article_opened = pyqtSignal(dict)
     favorite_toggled = pyqtSignal(dict, bool)
+    selection_changed = pyqtSignal(dict, bool)
 
-    def __init__(self, article, theme_manager, is_favorite=False, parent=None):
+    def __init__(self, article, theme_manager, is_favorite=False,
+                 selectable=False, parent=None):
         super().__init__(parent)
         self.article = dict(article)
         self.theme_manager = theme_manager
         self.setObjectName("Card")
+        self.setProperty("selected", False)
         theme_manager.apply_shadow(self, 1)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -825,6 +859,15 @@ class ArticleCard(QFrame):
         row = QHBoxLayout(self)
         row.setContentsMargins(20, 20, 20, 20)
         row.setSpacing(16)
+
+        self.select_box = RoundButton("circle", 36, theme_manager,
+                                      checked_icon="check")
+        self.select_box.setAccessibleName("Sélectionner l'article")
+        self.select_box.setChecked(False)
+        self.select_box.clicked.connect(self._toggle_selection)
+        self.select_box.refresh_theme()
+        self.select_box.setVisible(selectable)
+        row.addWidget(self.select_box, alignment=Qt.AlignTop)
 
         self.image = ImageLabel()
         self.image.set_image(self.article.get("image_url", ""), 96, 16)
@@ -848,10 +891,32 @@ class ArticleCard(QFrame):
         row.addLayout(col, 1)
 
         self.star = RoundButton("star", 36, theme_manager)
+        self.star.setAccessibleName("Ajouter aux favoris")
         self.star.setChecked(bool(is_favorite))
         self.star.clicked.connect(self._toggle_favorite)
         self.star.refresh_theme()
         row.addWidget(self.star, alignment=Qt.AlignTop)
+
+    def set_selectable(self, selectable):
+        """Active / masque la case de sélection."""
+        self.select_box.setVisible(selectable)
+
+    def set_selected(self, checked):
+        """Synchronise la case et le liseré depuis le modèle."""
+        if self.select_box.isChecked() != bool(checked):
+            self.select_box.setChecked(bool(checked))
+        self._apply_selection_style()
+
+    def _toggle_selection(self):
+        checked = self.select_box.isChecked()
+        self._apply_selection_style()
+        self.selection_changed.emit(self.article, checked)
+
+    def _apply_selection_style(self):
+        """Déclenche la ré-évaluation du QSS via la propriété `selected`."""
+        self.setProperty("selected", self.select_box.isChecked())
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def _toggle_favorite(self, checked):
         self.favorite_toggled.emit(self.article, bool(checked))
@@ -867,6 +932,150 @@ class ArticleCard(QFrame):
 
     def leaveEvent(self, event):
         self.setCursor(Qt.ArrowCursor)
+
+
+# ------------------------------------------------------------------ barre de sélection (étape 3)
+
+class SelectionBar(QFrame):
+    """Barre flottante de sélection : compteur + tout/désélectionner +
+    « Exporter en PDF (n) » + Annuler. Apparition par glissement de
+    180 ms (OutQuad). Les compteurs proviennent de MainWindow."""
+
+    all_clicked = pyqtSignal()
+    export_clicked = pyqtSignal()
+    cancel_clicked = pyqtSignal()
+
+    def __init__(self, theme_manager, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Card")
+        self.theme_manager = theme_manager
+        theme_manager.apply_shadow(self, 2)
+        self.setFixedHeight(56)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 12, 20, 12)
+        layout.setSpacing(10)
+
+        self.count_label = make_label("Aucune sélection", "label",
+                                      LABEL_PRIMARY)
+        layout.addWidget(self.count_label)
+        layout.addStretch()
+
+        self.all_button = pill_button("Tout sélectionner", "Secondary")
+        self.all_button.clicked.connect(self.all_clicked)
+        layout.addWidget(self.all_button)
+
+        self.export_button = pill_button("Exporter en PDF", "Primary")
+        self.export_button.clicked.connect(self.export_clicked)
+        layout.addWidget(self.export_button)
+
+        self.cancel_button = pill_button("Annuler", "Ghost")
+        self.cancel_button.clicked.connect(self.cancel_clicked)
+        layout.addWidget(self.cancel_button)
+
+        self._anim = None
+        self.setVisible(False)
+
+    def update_state(self, count, total):
+        """Rafraîchit compteur / labels selon la sélection courante."""
+        self.count_label.setText(
+            f"{count} article(s) sélectionné(s)" if count
+            else "Aucune sélection")
+        all_selected = bool(total) and count == total
+        self.all_button.setText(
+            "Tout désélectionner" if all_selected else "Tout sélectionner")
+        self.export_button.setText(f"Exporter en PDF ({count})")
+        self.export_button.setEnabled(count > 0)
+        self.cancel_button.setEnabled(count > 0)
+
+    def show_bar(self):
+        """Affiche la barre avec glissement vertical 180 ms OutQuad."""
+        if self.isVisible():
+            return
+        self.setVisible(True)
+        target = self.pos()
+        self.move(target.x(), target.y() + 24)
+        anim = QPropertyAnimation(self, b"pos", self)
+        anim.setDuration(180)
+        anim.setStartValue(self.pos())
+        anim.setEndValue(target)
+        anim.setEasingCurve(QEasingCurve.OutQuad)
+        anim.start()
+        self._anim = anim
+
+    def hide_bar(self):
+        """Masque la barre (la sélection peut rester cochée)."""
+        self.setVisible(False)
+
+    def refresh_theme(self):
+        self.update()
+
+
+# ------------------------------------------------------------------ pastilles (À propos)
+
+class Chip(QFrame):
+    """Pastille pill discrète (technologies, version).
+
+    Fond `bg.card.inset` via QSS (objectName "Chip") ; l'icône facultative
+    est recolorée au changement de thème via refresh_theme().
+    """
+
+    def __init__(self, text, theme_manager=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Chip")
+        self.theme_manager = theme_manager
+        self.setFixedHeight(28)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 4, 12, 4)
+        layout.setSpacing(8)
+        label = make_label(text, "caption", LABEL_SECONDARY)
+        layout.addWidget(label)
+
+    def refresh_theme(self):
+        self.update()
+
+
+class FeatureCard(QFrame):
+    """Mini-carte de fonctionnalité : cercle icône + titre + texte court."""
+
+    def __init__(self, theme_manager, icon_name, title, text, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Card")
+        self.theme_manager = theme_manager
+        self.icon_name = icon_name
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(10)
+
+        circle = QFrame()
+        circle.setObjectName("FeatureCircle")
+        circle.setFixedSize(56, 56)
+        circle_layout = QVBoxLayout(circle)
+        circle_layout.setContentsMargins(0, 0, 0, 0)
+        self.icon = QLabel()
+        self.icon.setAlignment(Qt.AlignCenter)
+        self._update_icon()
+        circle_layout.addWidget(self.icon)
+        layout.addWidget(circle, alignment=Qt.AlignLeft)
+
+        title_label = make_label(title, "h3", LABEL_PRIMARY)
+        layout.addWidget(title_label)
+        body = make_label(text, "caption", LABEL_SECONDARY)
+        body.setWordWrap(True)
+        layout.addWidget(body)
+        layout.addStretch()
+
+    def _update_icon(self):
+        if not self.theme_manager:
+            return
+        self.icon.setPixmap(svg_pixmap(
+            self.icon_name, self.theme_manager.color("text.primary"), 24))
+
+    def refresh_theme(self):
+        self._update_icon()
 
 
 # ------------------------------------------------------------------ recherche (§4.11)
