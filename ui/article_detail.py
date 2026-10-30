@@ -3,7 +3,7 @@
 
 import webbrowser
 
-from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtCore import Qt, QUrl, pyqtSignal
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel,
                              QScrollArea, QTextBrowser, QVBoxLayout,
@@ -13,6 +13,8 @@ from ui import components as c
 
 
 class ArticleDetailDialog(QDialog):
+
+    export_requested = pyqtSignal(dict)
 
     def __init__(self, article, theme_manager, parent=None):
         super().__init__(parent)
@@ -99,12 +101,20 @@ class ArticleDetailDialog(QDialog):
         footer = QHBoxLayout()
         close_button = c.pill_button("Fermer", "Ghost")
         close_button.clicked.connect(self.accept)
+        export_button = c.pill_button("Exporter en PDF", "Secondary")
+        export_button.setAccessibleName("Exporter l'article en PDF")
+        export_button.clicked.connect(self._request_export)
         visit_button = c.pill_button("Visiter le site", "Primary")
         visit_button.clicked.connect(self.visit_website)
         footer.addWidget(close_button)
+        footer.addWidget(export_button)
         footer.addStretch()
         footer.addWidget(visit_button)
         card_layout.addLayout(footer)
+
+    def _request_export(self):
+        """Signal export_requested : l'export est centralisé côté MainWindow."""
+        self.export_requested.emit(self.article)
 
     def _load_article_data(self):
         self.title_label.setText(self.article.get("title", "Sans titre"))
