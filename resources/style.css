@@ -59,8 +59,8 @@ QWidget {
     font-size: 11px;
 }
 QPushButton#SidebarCtaButton {
-    background: #FFFFFF;
-    color: #111111;
+    background: ${sidebar_cta_bg};
+    color: ${sidebar_cta_text};
     font-size: 13px;
     font-weight: 600;
     border: none;
@@ -69,10 +69,10 @@ QPushButton#SidebarCtaButton {
     padding: 0 10px;
 }
 QPushButton#SidebarCtaButton:hover {
-    background: #F2F2F2;
+    background: ${sidebar_cta_hover};
 }
 QPushButton#SidebarCtaButton:pressed {
-    background: #E6E6E6;
+    background: ${sidebar_cta_pressed};
 }
 
 /* Bouton perso dessine par SidebarButton (paintEvent) */
@@ -83,6 +83,11 @@ QFrame#Card {
     background: ${bg_card};
     border-radius: 24px;
     border: 1px solid ${border_subtle};
+}
+
+/* Carte d'article cochée pour l'export (sélection multiple) : liseré accent */
+QFrame#Card[selected="true"] {
+    border: 2px solid ${accent};
 }
 
 QFrame#CardRaised {
@@ -179,7 +184,7 @@ QLabel#LabelOnDark { color: ${text_on_dark}; }
 QLabel#LabelOnDarkMuted { color: ${text_on_dark_muted}; }
 QLabel#LabelOnAccent { color: ${text_on_accent}; }
 QLabel#ImagePlaceholder {
-    color: ${text_muted};
+    color: ${text_secondary};
     background: ${bg_card_inset};
     border-radius: 16px;
 }
@@ -203,6 +208,20 @@ QLabel#QuickActionLabel {
     color: ${text_secondary};
     font-size: 12px;
     font-weight: 500;
+}
+
+/* ---------------- Page a propos (pastilles et cercles) ---------------- */
+
+QFrame#Chip {
+    background: ${bg_card_inset};
+    border-radius: 14px;
+    border: none;
+}
+
+#FeatureCircle {
+    background: ${bg_card_raised};
+    border-radius: 28px;
+    border: none;
 }
 
 /* ---------------- Champs (paragraph 4.11) ---------------- */
@@ -254,7 +273,7 @@ QComboBox QAbstractItemView {
 /* ---------------- Barre de progression (paragraph 4.6) ---------------- */
 
 QProgressBar {
-    background: ${bg_card_inset};
+    background: ${chart_track};
     border: none;
     border-radius: 15px;
     min-height: 30px;
@@ -263,7 +282,7 @@ QProgressBar {
     color: transparent;
 }
 QProgressBar::chunk {
-    background: ${bg_card_raised};
+    background: ${chart_bar};
     border-radius: 15px;
 }
 QProgressBar#ProgressAccent {
