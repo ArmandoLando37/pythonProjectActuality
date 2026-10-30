@@ -37,14 +37,22 @@
 | `accent.pressed` | `#CF4F2D` | Clic sur l'accent |
 | `accent.soft` | `rgba(232, 96, 60, 0.18)` | Halo/lueur derrière un élément accentué |
 | `text.primary` | `#111111` | Titres, chiffres |
-| `text.secondary` | `#6B6B6B` | Libellés, sous-titres |
-| `text.muted` | `#9A9A9A` | Placeholder, horodatage, éléments inactifs |
+| `text.secondary` | `#5F5F5F` | Libellés, sous-titres (≥ 4.5:1 sur cartes/enfoncé) |
+| `text.muted` | `#808080` | Placeholder, horodatage, éléments inactifs (≥ 3:1, non essentiel) |
 | `text.on-dark` | `#FFFFFF` | Texte sur sidebar / carte sombre |
 | `text.on-dark.muted` | `rgba(255,255,255,0.60)` | Texte secondaire sur fond sombre |
 | `text.on-accent` | `#FFFFFF` | Texte/icône sur bouton accent |
 | `border.subtle` | `rgba(255,255,255,0.65)` | Liseré clair 1 px sur les cartes (effet verre) |
 | `shadow` | `rgba(0,0,0,0.10)` | Ombres |
-| `success` / `warning` / `error` | `#3FA66B` / `#E8A23C` / `#D64545` | États (à utiliser avec parcimonie) |
+| `chart.track` | `#C9C9C9` | Pistes de graphiques / barres (visibles sur `bg.card`) |
+| `chart.bar` | `#111111` | Remplissage de barres / arc d'anneau (≥ 3:1 sur piste) |
+| `success` / `warning` / `error` | `#2E8549` / `#B17300` / `#D64545` | États (≥ 3:1 graphique sur carte) |
+| `sidebar.rest` | `rgba(255,255,255,0.08)` | Pastille au repos d'un item de navigation |
+| `sidebar.hover` | `rgba(255,255,255,0.14)` | Pastille au survol (identique en sombre) |
+| `sidebar.cta.bg` | `#FFFFFF` | Bouton CTA sidebar (pill "Actualiser") |
+| `sidebar.cta.text` | `#111111` | Texte du CTA |
+| `sidebar.cta.hover` | `#F2F2F2` | Survol CTA |
+| `sidebar.cta.pressed` | `#E6E6E6` | Clic CTA |
 
 ### 2.2 Couleurs — thème sombre (déclinaison pour `theme_manager.py`)
 
@@ -59,8 +67,11 @@
 | `accent` | `#F0714D` (légèrement éclairci pour garder le contraste) |
 | `text.primary` | `#F2F2F2` |
 | `text.secondary` | `#A8A8A8` |
-| `text.muted` | `#707070` |
+| `text.muted` | `#808080` (≥ 3:1 sur cartes) |
 | `shadow` | `rgba(0,0,0,0.45)` |
+| `chart.track` | `#505050` (piste visible sur `#262626`) |
+| `chart.bar` | `#F2F2F2` |
+| `sidebar.rest` / `sidebar.hover` / `sidebar.cta.*` | identiques au clair (surfaces déjà sombres) |
 
 ### 2.3 Typographie
 
@@ -204,8 +215,8 @@ Qt n'a pas de `box-shadow` en QSS → utiliser `QGraphicsDropShadowEffect`.
 
 ### 4.6 Barre de progression linéaire (`ProgressBar`)
 
-- Piste : hauteur 28–32 px, `bg.card.inset`, radius 50 %.
-- Remplissage : **blanc** `#FFFFFF` avec ombre légère (style de l'image) ou `accent` si c'est l'élément phare.
+- Piste : hauteur 28–32 px, `chart.track` (clair `#C9C9C9` / sombre `#505050`), radius 50 %.
+- Remplissage : `chart.bar` (noir sur clair / blanc sur sombre) — garantit ≥ 3:1 sur la piste ; `accent` réservé à la variante `ProgressAccent` (élément phare).
 - Valeur à droite : "**2 340**/8 000" → valeur courante en gras `text.primary`, total en `text.muted`.
 - Animation du remplissage : 600 ms, `QEasingCurve.OutCubic`.
 - Titre au-dessus : "You're **45%** to your daily goal" → le pourcentage peut être en 600.
@@ -214,17 +225,17 @@ Qt n'a pas de `box-shadow` en QSS → utiliser `QGraphicsDropShadowEffect`.
 
 - Widget **custom** (`paintEvent` avec `QPainter`, antialiasing activé).
 - Épaisseur : 8–12 px, extrémités arrondies (`Qt.RoundCap`).
-- Piste : `bg.card.inset`. Valeur : `accent` (ou noir pour une 2ᵉ valeur).
+- Piste : `bg.card.inset`. Valeur : `chart.bar` (noir sur clair / blanc sur sombre ; ≥ 3:1 garanti — l'accent en clair ne tient pas 3:1 sur la piste, cf. `tools/check_contrast.py`).
 - Petit anneau (≈ 28 px, trait 4 px) dans les mini-cartes ; grand arc (demi-cercle, 2 anneaux concentriques noir + accent) dans les cartes de synthèse.
 - Légende : puce ronde de 8 px colorée + libellé `label` + valeur `stat`.
 
 ### 4.8 Graphique en barres (`BarChart`)
 
 - **Barres fines verticales** (largeur ≈ 8–10 px), espacées régulièrement, coins arrondis.
-- Toutes les barres existent en **gris très clair** (`#E3E3E3`, hauteur max = piste) ; les barres avec valeur sont **remplies en noir** (`text.primary`) à leur hauteur réelle.
+- Toutes les barres existent en **gris de piste** (`chart.track`, hauteur max = piste) ; les barres avec valeur sont **remplies en `chart.bar`** (noir sur clair / blanc sur sombre) à leur hauteur réelle.
 - Aucun axe, aucun quadrillage, aucune bordure. Libellé + valeur à gauche ("Steps / 2.340").
 - Avec `matplotlib` : fond transparent, `spines` masqués, `ax.axis('off')`, `bar(width=0.5)`, couleurs ci-dessus. Préférer le rendu `QPainter` pour les petites cartes (plus net et plus léger).
-- Mettre en avant une barre (max/sélection) en `accent`.
+- Mettre en avant une barre (max/sélection) en `accent` — intention décorative de la charte, le remplissage informatif reste `chart.bar` (≥ 3:1).
 
 ### 4.9 Contrôle segmenté / onglets (`SegmentedControl`)
 
@@ -290,7 +301,7 @@ Qt n'a pas de `box-shadow` en QSS → utiliser `QGraphicsDropShadowEffect`.
 
 ## 7. Accessibilité
 
-- **Contraste** : `text.primary` sur `bg.card` ≈ 17:1 ✔ ; `text.secondary` sur `bg.card` ≈ 4.8:1 ✔.
+- **Contraste** : audité par `tools/check_contrast.py` (tokens × seuils WCAG, 0 échec bloquant). Repères clés : `text.primary` sur `bg.card` ≈ 17:1 ✔ ; `text.secondary` sur cartes/enfoncé ≥ 5.2:1 ✔ ; `chart.bar` sur `chart.track` ≥ 7:1 ✔.
 - ⚠️ `accent` (`#E8603C`) sur fond clair ≈ 3.4:1 → **réservé aux éléments graphiques et textes ≥ 18 px/gras**. Ne jamais l'utiliser pour du petit texte courant.
 - Texte blanc sur `accent` : uniquement en 14 px gras minimum.
 - Cible de clic **≥ 40 × 40 px**.
